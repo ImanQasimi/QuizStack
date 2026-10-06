@@ -1,1 +1,1 @@
-# Quiz-Platform
+# QuizStack
