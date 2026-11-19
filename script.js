@@ -1,126 +1,30 @@
-/* =========================================================
-   QuizStack front-end mockup
-   Everything under "MOCK SERVER" stands in for the Express API:
-     GET  /api/quizzes          -> list quizzes
-     GET  /api/quizzes/:id      -> questions (no correct answers!)
-     POST /api/quizzes/:id/submit -> { score, total, results[], feedback }
-   Swap each mock function for a fetch() call later; the UI code
-   below doesn't need to change.
-   ========================================================= */
+const API_BASE = window.location.port === "3000" ? "" : "http://localhost:3000";
 
-/* ---------------- MOCK SERVER ---------------- */
-const MOCK_DB = [
-  {
-    id: 1, title: "JavaScript Basics", subject: "Web Development", difficulty: "easy",
-    description: "Variables, types and core language behaviour.",
-    questions: [
-      { id: 101, type: "multiple-choice", text: "Which keyword declares a block-scoped variable that can be reassigned?",
-        options: ["var", "let", "const", "static"], answer: "let",
-        explanation: "let is block-scoped and reassignable; const is block-scoped but cannot be reassigned." },
-      { id: 102, type: "true-false", text: "In JavaScript, '5' === 5 evaluates to true.",
-        options: ["True", "False"], answer: "False",
-        explanation: "=== compares type and value. A string and a number are different types." },
-      { id: 103, type: "multiple-choice", text: "What does Array.prototype.map() return?",
-        options: ["The original array, modified", "A new array", "A single value", "undefined"], answer: "A new array",
-        explanation: "map() builds and returns a new array without changing the original." },
-      { id: 104, type: "short-answer", text: "What built-in function converts a JSON string into a JavaScript object?",
-        answer: ["JSON.parse", "JSON.parse()"],
-        explanation: "JSON.parse() turns JSON text into an object; JSON.stringify() does the reverse." },
-    ],
-  },
-  {
-    id: 2, title: "HTTP & Servers", subject: "Client-Server", difficulty: "medium",
-    description: "Requests, responses and how a server handles them.",
-    questions: [
-      { id: 201, type: "multiple-choice", text: "Which HTTP status code means 'Not Found'?",
-        options: ["200", "301", "404", "500"], answer: "404",
-        explanation: "404 means the server can't find the requested resource." },
-      { id: 202, type: "true-false", text: "A GET request should be used to submit sensitive data in the URL.",
-        options: ["True", "False"], answer: "False",
-        explanation: "URLs are logged and cached. Sensitive data belongs in a POST body over HTTPS." },
-      { id: 203, type: "short-answer", text: "Which Node.js framework is used to define routes like app.get('/quiz')?",
-        answer: ["express", "express.js", "expressjs"],
-        explanation: "Express.js is a minimal Node framework for routing and middleware." },
-      { id: 204, type: "multiple-choice", text: "Which HTTP method is most appropriate for submitting quiz answers?",
-        options: ["GET", "POST", "HEAD", "OPTIONS"], answer: "POST",
-        explanation: "POST sends data in the request body for the server to process." },
-      { id: 205, type: "true-false", text: "The server should send correct answers to the client before the quiz is submitted.",
-        options: ["True", "False"], answer: "False",
-        explanation: "Scoring happens server-side so students can't read answers from the network tab." },
-    ],
-  },
-  {
-    id: 3, title: "SQL Fundamentals", subject: "Databases", difficulty: "hard",
-    description: "Querying, joining and designing MySQL tables.",
-    questions: [
-      { id: 301, type: "multiple-choice", text: "Which clause filters rows after GROUP BY?",
-        options: ["WHERE", "HAVING", "ORDER BY", "LIMIT"], answer: "HAVING",
-        explanation: "WHERE filters rows before grouping; HAVING filters the groups." },
-      { id: 302, type: "short-answer", text: "What SQL keyword removes duplicate rows from a SELECT result?",
-        answer: ["distinct", "select distinct"],
-        explanation: "SELECT DISTINCT returns only unique rows." },
-      { id: 303, type: "true-false", text: "A PRIMARY KEY column can contain NULL values.",
-        options: ["True", "False"], answer: "False",
-        explanation: "Primary keys must be unique and non-null." },
-    ],
-  },
-];
-
-const delay = (ms) => new Promise((r) => setTimeout(r, ms));
-const clone = (o) => JSON.parse(JSON.stringify(o));
-
-async function mockFailIfRequested() {
-  if ($("#sim-error").checked) throw new Error("Server error (500). The database could not be reached.");
+async function apiRequest(url, options) {
+  const response = await fetch(`${API_BASE}${url}`, options);
+  const contentType = response.headers.get("content-type") || "";
+  if (!contentType.includes("application/json")) {
+    throw new Error("The quiz API returned a webpage instead of JSON. Start the app with npm start and open http://localhost:3000.");
+  }
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.error || `Request failed (${response.status}).`);
+  return data;
 }
 
 async function apiGetQuizzes() {
-  await delay(350); await mockFailIfRequested();
-  return MOCK_DB.map(({ questions, ...q }) => ({ ...q, questionCount: questions.length }));
+  return apiRequest("/api/quizzes");
 }
 
 async function apiGetQuiz(id) {
-  await delay(350); await mockFailIfRequested();
-  const quiz = clone(MOCK_DB.find((q) => q.id === id));
-  // The real server would never send answers/explanations here.
-  quiz.questions.forEach((q) => { delete q.answer; delete q.explanation; });
-  return quiz;
+  return apiRequest(`/api/quizzes/${id}`);
 }
 
 async function apiSubmit(id, answers) {
-  await delay(1400); await mockFailIfRequested();
-  if (!answers || typeof answers !== "object") throw new Error("Invalid submission (400).");
-  const quiz = MOCK_DB.find((q) => q.id === id);
-  const norm = (s) => String(s ?? "").trim().toLowerCase();
-
-  const results = quiz.questions.map((q) => {
-    const given = answers[q.id];
-    const answered = given !== undefined && norm(given) !== "";
-    const accepted = Array.isArray(q.answer) ? q.answer : [q.answer];
-    const correct = answered && accepted.map(norm).includes(norm(given));
-    return {
-      id: q.id, text: q.text, type: q.type, answered, correct,
-      yourAnswer: answered ? given : null,
-      correctAnswer: accepted[0], explanation: q.explanation,
-    };
+  return apiRequest(`/api/quizzes/${id}/submit`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ answers }),
   });
-
-  const score = results.filter((r) => r.correct).length;
-  const missed = results.filter((r) => !r.correct);
-  const pct = Math.round((score / results.length) * 100);
-
-  // Stand-in for the OpenAI call the real server will make.
-  const feedback = {
-    summary:
-      pct === 100 ? "Perfect score. You clearly know this material well."
-      : pct >= 70 ? "Solid work. You have a good grasp of most of this quiz."
-      : pct >= 40 ? "A decent start, but a few core ideas need another look."
-      : "This topic is still new to you, and that's okay. Let's build it up step by step.",
-    tips: missed.slice(0, 3).map((r) => `Review: "${r.text}" — ${r.explanation}`),
-    next: pct === 100 ? "Try a harder quiz to keep stretching yourself."
-      : "Retake the quiz after reviewing the points above and aim to beat your score.",
-  };
-
-  return { score, total: results.length, results, feedback };
 }
 
 /* ---------------- UI ---------------- */
@@ -262,7 +166,7 @@ async function submit() {
 }
 
 /* ----- Results ----- */
-function renderResults({ score, total, results, feedback }) {
+function renderResults({ score, total, results, feedback, aiFeedbackAvailable }) {
   const pct = Math.round((score / total) * 100);
   const ring = $("#score-ring");
   ring.className = "score-ring" + (pct < 40 ? " low" : pct < 70 ? " mid" : "");
@@ -272,8 +176,17 @@ function renderResults({ score, total, results, feedback }) {
   $("#results-title").textContent = state.quiz.title;
   $("#results-summary").textContent = pct >= 70 ? "Nice work!" : "Keep going, you're learning.";
 
-  const ai = $("#ai-feedback"); ai.replaceChildren(el("p", {}, feedback.summary));
-  if (feedback.tips.length) ai.append(el("ul", {}, feedback.tips.map((t) => el("li", {}, t))));
+  const ai = $("#ai-feedback");
+  ai.replaceChildren(el("p", {}, feedback.summary));
+  if (!aiFeedbackAvailable) {
+    ai.append(el("p", { class: "muted" }, "AI feedback is unavailable; short answers used exact-match grading."));
+  }
+  if (feedback.strengths?.length) {
+    ai.append(el("h4", {}, "Strengths"), el("ul", {}, feedback.strengths.map((item) => el("li", {}, item))));
+  }
+  if (feedback.improvements?.length) {
+    ai.append(el("h4", {}, "Areas to improve"), el("ul", {}, feedback.improvements.map((item) => el("li", {}, item))));
+  }
   ai.append(el("p", {}, feedback.next));
 
   const list = $("#breakdown"); list.replaceChildren();
