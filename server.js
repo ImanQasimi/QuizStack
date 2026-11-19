@@ -4,6 +4,7 @@ const path = require("node:path");
 const cors = require("cors");
 const express = require("express");
 const Groq = require("groq-sdk");
+const quizRepository = require("./repositories/quizRepository");
 
 const app = express();
 const port = process.env.PORT || 3000;
@@ -11,42 +12,11 @@ const groq = process.env.GROQ_API_KEY
     ? new Groq({ apiKey: process.env.GROQ_API_KEY })
     : null;
 
-const QUIZZES = [
-    {
-        id: 1, title: "JavaScript Basics", subject: "Web Development", difficulty: "easy",
-        description: "Variables, types and core language behaviour.",
-        questions: [
-            { id: 101, type: "multiple-choice", text: "Which keyword declares a block-scoped variable that can be reassigned?", options: ["var", "let", "const", "static"], answer: "let", explanation: "let is block-scoped and reassignable; const is block-scoped but cannot be reassigned." },
-            { id: 102, type: "true-false", text: "In JavaScript, '5' === 5 evaluates to true.", options: ["True", "False"], answer: "False", explanation: "=== compares type and value. A string and a number are different types." },
-            { id: 103, type: "multiple-choice", text: "What does Array.prototype.map() return?", options: ["The original array, modified", "A new array", "A single value", "undefined"], answer: "A new array", explanation: "map() builds and returns a new array without changing the original." },
-            { id: 104, type: "short-answer", text: "Explain the difference between JSON.parse() and JSON.stringify(), and give one situation where you would use each.", answer: ["JSON.parse() converts JSON text into a JavaScript value, while JSON.stringify() converts a JavaScript value into JSON text. I would use JSON.parse() to read JSON received from an API and JSON.stringify() to serialize data before sending it to an API."], explanation: "JSON.parse() reads JSON text into JavaScript data; JSON.stringify() serializes JavaScript data as JSON text. Mentioning a practical use for each shows when the conversions are needed." },
-        ],
-    },
-    {
-        id: 2, title: "HTTP & Servers", subject: "Client-Server", difficulty: "medium",
-        description: "Requests, responses and how a server handles them.",
-        questions: [
-            { id: 201, type: "multiple-choice", text: "Which HTTP status code means 'Not Found'?", options: ["200", "301", "404", "500"], answer: "404", explanation: "404 means the server can't find the requested resource." },
-            { id: 202, type: "true-false", text: "A GET request should be used to submit sensitive data in the URL.", options: ["True", "False"], answer: "False", explanation: "URLs are logged and cached. Sensitive data belongs in a POST body over HTTPS." },
-            { id: 203, type: "short-answer", text: "A browser needs to send login credentials to a server. Describe how you would send them and why you would not put them in the URL.", answer: ["I would send the credentials in the body of an HTTPS POST request. URLs can be stored in browser history and server logs or shared in referrer data, while HTTPS protects the request in transit."], explanation: "Credentials should be sent in a request body over HTTPS, not in a URL that may be logged, saved in browser history, or exposed through referrer data. HTTPS is needed to protect the credentials in transit." },
-            { id: 204, type: "multiple-choice", text: "Which HTTP method is most appropriate for submitting quiz answers?", options: ["GET", "POST", "HEAD", "OPTIONS"], answer: "POST", explanation: "POST sends data in the request body for the server to process." },
-            { id: 205, type: "true-false", text: "The server should send correct answers to the client before the quiz is submitted.", options: ["True", "False"], answer: "False", explanation: "Scoring happens server-side so students can't read answers from the network tab." },
-        ],
-    },
-    {
-        id: 3, title: "SQL Fundamentals", subject: "Databases", difficulty: "hard",
-        description: "Querying, joining and designing MySQL tables.",
-        questions: [
-            { id: 301, type: "multiple-choice", text: "Which clause filters rows after GROUP BY?", options: ["WHERE", "HAVING", "ORDER BY", "LIMIT"], answer: "HAVING", explanation: "WHERE filters rows before grouping; HAVING filters the groups." },
-            { id: 302, type: "short-answer", text: "An orders table contains many rows for each customer. Describe a query that returns each customer ID once, and explain how SQL decides which rows are duplicates.", answer: ["SELECT DISTINCT customer_id FROM orders returns each customer ID once. DISTINCT compares the values in all selected columns, so rows are duplicates when those selected values match."], explanation: "Use SELECT DISTINCT customer_id FROM orders to get unique customer IDs. DISTINCT compares every selected column, not the entire source row, so selecting additional columns can produce multiple rows for one customer." },
-            { id: 303, type: "true-false", text: "A PRIMARY KEY column can contain NULL values.", options: ["True", "False"], answer: "False", explanation: "Primary keys must be unique and non-null." },
-        ],
-    },
-];
 
 app.use(cors());
 app.use(express.json({ limit: "32kb" }));
-app.use(express.static(__dirname));
+for (const file of ["index.html", "style.css", "script.js"]) {
+    app.get(file === "index.html" ? "/" : `/${file}`, (req, res) => res.sendFile(path.join(__dirname, file)));
 
 const normalize = (value) => String(value ?? "").trim().toLowerCase();
 
@@ -109,12 +79,12 @@ async function gradeWithAI(quiz, answers, objectiveResults) {
     };
 }
 
-app.get("/api/quizzes", (req, res) => {
-    res.json(QUIZZES.map(({ questions, ...quiz }) => ({ ...quiz, questionCount: questions.length })));
+app.get("/api/quizzes", async (req, res) => {
+    res.json(await quizRepository.listQuizzes());
 });
 
 app.get("/api/quizzes/:id", (req, res) => {
-    const quiz = QUIZZES.find((item) => item.id === Number(req.params.id));
+    const quiz = await quizRepository.getQuiz(Number(req.params.id));
     if (!quiz) return res.status(404).json({ error: "Quiz not found." });
 
     const { questions, ...details } = quiz;
@@ -125,7 +95,7 @@ app.get("/api/quizzes/:id", (req, res) => {
 });
 
 app.post("/api/quizzes/:id/submit", async (req, res) => {
-    const quiz = QUIZZES.find((item) => item.id === Number(req.params.id));
+    const quiz = await quizRepository.getQuiz(Number(req.params.id));
     if (!quiz) return res.status(404).json({ error: "Quiz not found." });
 
     const { answers } = req.body ?? {};
